@@ -105,7 +105,7 @@ canvas{
     <div class="toolbar">
       <label class="btn" title="從「檔案」App 選擇 .sgf 棋譜">
         📂 載入 SGF
-        <input id="sgfFile" type="file" accept=".sgf,application/x-go-sgf,text/plain" hidden>
+        <input id="sgfFile" type="file" hidden>
       </label>
       <button id="prevBtn" class="secondary">◀ 上一手</button>
       <button id="playBtn">▶ 播放</button>
@@ -471,6 +471,11 @@ canvas{
 
   $('sgfFile').addEventListener('change', async e=>{
     const f=e.target.files[0]; if(!f)return;
+    if(!f.name.toLowerCase().endsWith('.sgf')){
+      alert('請選擇 .sgf 棋譜檔。');
+      e.target.value='';
+      return;
+    }
     try{
       stopPlay();
       sgfText=await f.text();
