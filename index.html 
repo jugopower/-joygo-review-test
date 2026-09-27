@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Joy Go 解盤小程式</title>
+<style>
+:root{
+  --bg:#f4efe6; --panel:#fffaf2; --line:#5f4630; --wood:#d7a85f;
+  --text:#2d241d; --muted:#76685b; --accent:#6b4b2f; --danger:#9b3f35;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",sans-serif;background:var(--bg);color:var(--text)}
+header{padding:12px 16px;background:#2f241d;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:0;z-index:20}
+header h1{font-size:18px;margin:0}
+main{max-width:1180px;margin:auto;padding:12px;display:grid;grid-template-columns:minmax(320px,1fr) 360px;gap:14px}
+.card{background:var(--panel);border:1px solid #d8cabb;border-radius:14px;padding:12px;box-shadow:0 2px 10px rgba(60,40,20,.07)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+button,.btn,select,input[type=file]{font:inherit}
+button,.btn{border:0;border-radius:10px;padding:10px 12px;background:var(--accent);color:white;cursor:pointer}
+button.secondary{background:#8c735d}
+button.light{background:#e7dacb;color:#33261d}
+button.danger{background:var(--danger)}
+button:disabled{opacity:.45;cursor:not-allowed}
+select,input[type=range]{accent-color:var(--accent)}
+.board-wrap{width:min(82vw,720px);max-width:100%;margin:auto;aspect-ratio:1;position:relative}
+canvas{
+  width:100%;
+  height:100%;
+  display:block;
+  border-radius:10px;
+  touch-action:none;
+  background:var(--wood);
+}
+.fallback-grid{
+  position:absolute;
+  left:6.5%;
+  right:6.5%;
+  top:6.5%;
+  bottom:6.5%;
+  pointer-events:none;
+  display:none;
+}
+.fallback-grid .v,
+.fallback-grid .h{
+  position:absolute;
+  background:rgba(76,56,40,.82);
+}
+.fallback-grid .v{top:0;bottom:0;width:1px;transform:translateX(-0.5px)}
+.fallback-grid .h{left:0;right:0;height:1px;transform:translateY(-0.5px)}
+.js-ok .fallback-grid{display:none!important}
+
+/* 9／13／19 路切換：即使 iPad 檔案預覽不執行 JavaScript，也能顯示正確棋盤 */
+.board-size-picker{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  flex-wrap:wrap;
+}
+.board-size-picker input{
+  position:absolute;
+  opacity:0;
+  pointer-events:none;
+}
+.board-size-picker label{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:58px;
+  min-height:42px;
+  padding:7px 12px;
+  border-radius:10px;
+  background:#e7dacb;
+  color:#33261d;
+  font-weight:700;
+  cursor:pointer;
+}
+.board-size-picker input:checked + label{
+  background:#6b4b2f;
+  color:#fff;
+}
+
+/* 依選取的路數，只顯示一套棋盤線 */
+:root:has(#bs9:checked) .grid9{display:block}
+:root:has(#bs13:checked) .grid13{display:block}
+:root:has(#bs19:checked) .grid19{display:block}
+
+/* JavaScript 正常執行時，Canvas 自己畫盤，隱藏備援線 */
+.js-ok .fallback-grid{display:none!important}
+
+@media(max-width:860px){
+  main{grid-template-columns:1fr}
+  .board-wrap{width:min(96vw,700px)}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Joy Go 棋譜解盤</h1>
+  <div style="font-size:13px;opacity:.8">SGF 9×9／13×13／19×19</div>
+</header>
+
+<main>
+  <section class="card">
+    <div class="toolbar">
+      <label class="btn" title="從「檔案」App 選擇 .sgf 棋譜">
+        📂 載入 SGF
+        <input id="sgfFile" type="file" hidden>
+      </label>
+      <button id="prevBtn" class="secondary">◀ 上一手</button>
+      <button id="playBtn">▶ 播放</button>
+      <button id="nextBtn" class="secondary">下一手 ▶</button>
+      <button id="firstBtn" class="light">⏮ 開始</button>
+      <button id="lastBtn" class="light">⏭ 最後</button>
+    </div>
+
+    <div class="toolbar">
+      <span class="small">棋盤大小</span>
+      <div class="board-size-picker">
+        <input type="radio" name="boardSizeRadio" id="bs9" value="9">
+        <label for="bs9">9 路</label>
+        <input type="radio" name="boardSizeRadio" id="bs13" value="13">
+        <label for="bs13">13 路</label>
+        <input type="radio" name="boardSizeRadio" id="bs19" value="19" checked>
+        <label for="bs19">19 路</label>
+      </div>
+      <label class="small" for="speedSec">播放速度</label>
+      <input id="speedSec" type="number" min="0.2" max="30" step="0.1" value="1.5"
+             style="width:88px;border:1px solid #cdbda9;border-radius:9px;padding:8px;background:#fffdf8;font-size:16px">
+      <span class="small">秒／手</span>
+      <button id="pauseBtn" class="light" disabled>⏸ 暫停</button>
+      <label class="small"><input id="showNumber" type="checkbox" checked> 顯示手數</label>
+      <span id="jsStatus" class="badge">系統：啟動中…</span>
+      <label class="small"><input id="autoVoice" type="checkbox"> 自動播放本手錄音</label>
+    </div>
+
+    <div class="board-wrap board-area">
+      <canvas id="board" width="900" height="900"></canvas>
+      <div class="fallback-grid grid9" aria-hidden="true"><span class="v" style="left:0.00000000%"></span><span class="h" style="top:0.00000000%"></span><span class="v" style="left:12.50000000%"></span><span class="h" style="top:12.50000000%"></span><span class="v" style="left:25.00000000%"></span><span class="h" style="top:25.00000000%"></span><span class="v" style="left:37.50000000%"></span><span class="h" style="top:37.50000000%"></span><span class="v" style="left:50.00000000%"></span><span class="h" style="top:50.00000000%"></span><span class="v" style="left:62.50000000%"></span><span class="h" style="top:62.50000000%"></span><span class="v" style="left:75.00000000%"></span><span class="h" style="top:75.00000000%"></span><span class="v" style="left:87.50000000%"></span><span class="h" style="top:87.50000000%"></span><span class="v" style="left:100.00000000%"></span><span class="h" style="top:100.00000000%"></span></div>
+      <div class="fallback-grid grid13" aria-hidden="true"><span class="v" style="left:0.00000000%"></span><span class="h" style="top:0.00000000%"></span><span class="v" style="left:8.33333333%"></span><span class="h" style="top:8.33333333%"></span><span class="v" style="left:16.66666667%"></span><span class="h" style="top:16.66666667%"></span><span class="v" style="left:25.00000000%"></span><span class="h" style="top:25.00000000%"></span><span class="v" style="left:33.33333333%"></span><span class="h" style="top:33.33333333%"></span><span class="v" style="left:41.66666667%"></span><span class="h" style="top:41.66666667%"></span><span class="v" style="left:50.00000000%"></span><span class="h" style="top:50.00000000%"></span><span class="v" style="left:58.33333333%"></span><span class="h" style="top:58.33333333%"></span><span class="v" style="left:66.66666667%"></span><span class="h" style="top:66.66666667%"></span><span class="v" style="left:75.00000000%"></span><span class="h" style="top:75.00000000%"></span><span class="v" style="left:83.33333333%"></span><span class="h" style="top:83.33333333%"></span><span class="v" style="left:91.66666667%"></span><span class="h" style="top:91.66666667%"></span><span class="v" style="left:100.00000000%"></span><span class="h" style="top:100.00000000%"></span></div>
+      <div class="fallback-grid grid19" aria-hidden="true"><span class="v" style="left:0.00000000%"></span><span class="h" style="top:0.00000000%"></span><span class="v" style="left:5.55555556%"></span><span class="h" style="top:5.55555556%"></span><span class="v" style="left:11.11111111%"></span><span class="h" style="top:11.11111111%"></span><span class="v" style="left:16.66666667%"></span><span class="h" style="top:16.66666667%"></span><span class="v" style="left:22.22222222%"></span><span class="h" style="top:22.22222222%"></span><span class="v" style="left:27.77777778%"></span><span class="h" style="top:27.77777778%"></span><span class="v" style="left:33.33333333%"></span><span class="h" style="top:33.33333333%"></span><span class="v" style="left:38.88888889%"></span><span class="h" style="top:38.88888889%"></span><span class="v" style="left:44.44444444%"></span><span class="h" style="top:44.44444444%"></span><span class="v" style="left:50.00000000%"></span><span class="h" style="top:50.00000000%"></span><span class="v" style="left:55.55555556%"></span><span class="h" style="top:55.55555556%"></span><span class="v" style="left:61.11111111%"></span><span class="h" style="top:61.11111111%"></span><span class="v" style="left:66.66666667%"></span><span class="h" style="top:66.66666667%"></span><span class="v" style="left:72.22222222%"></span><span class="h" style="top:72.22222222%"></span><span class="v" style="left:77.77777778%"></span><span class="h" style="top:77.77777778%"></span><span class="v" style="left:83.33333333%"></span><span class="h" style="top:83.33333333%"></span><span class="v" style="left:88.88888889%"></span><span class="h" style="top:88.88888889%"></span><span class="v" style="left:94.44444444%"></span><span class="h" style="top:94.44444444%"></span><span class="v" style="left:100.00000000%"></span><span class="h" style="top:100.00000000%"></span></div>
+    </div>
+
+    <div class="stat">
+      <span id="gameInfo">尚未載入棋譜</span>
+      <span id="moveInfo">第 0 手</span>
+    </div>
+  </section>
+
+  <aside class="card">
+    <div class="section-title">本手文字解說</div>
+    <textarea id="comment" placeholder="例如：黑棋此手先手壓迫，目的是逼白棋低位應對，再轉身搶右上角大場。"></textarea>
+    <div class="toolbar">
+      <button id="saveCommentBtn">儲存文字</button>
+      <button id="clearCommentBtn" class="light">清除本手文字</button>
+    </div>
+
+    <div class="section-title">本手語音解說</div>
+    <div class="audioBox">
+      <button id="recordBtn">● 開始錄音</button>
+      <button id="stopRecordBtn" class="danger" disabled>■ 停止</button>
+      <button id="playVoiceBtn" class="secondary" disabled>▶ 播放錄音</button>
+      <button id="deleteVoiceBtn" class="light" disabled>刪除錄音</button>
+    </div>
+    <audio id="audioPlayer" controls style="width:100%;margin-top:8px;display:none"></audio>
+    <div id="recordStatus" class="note">錄音會綁定在目前這一手。</div>
+
+    <div class="section-title">棋局名稱</div>
+    <input id="gameTitle" type="text" placeholder="例如：朱老師解說－AI進三三研究">
+
+    <div class="section-title">手順</div>
+    <div id="moveList" class="move-list"></div>
+
+    <div class="toolbar" style="margin-top:10px">
+      <button id="exportBtn" class="secondary">匯出文字解說 JSON</button>
+      <label class="btn light">
+        匯入解說 JSON
+        <input id="importJson" type="file" accept=".json,application/json" hidden>
+      </label>
+    </div>
+    <div class="note">
+      語音使用瀏覽器的麥克風錄音，會保存在這台裝置的瀏覽器資料庫。iPhone／iPad 建議放到 HTTPS 網址後使用，麥克風權限最穩定。
+    </div>
+  </aside>
+</main>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const canvas = $('board');
+  const ctx = canvas.getContext('2d');
+
+  let size = 19;
+  let moves = [];
+  let setupBlack = [], setupWhite = [];
+  let current = 0;
+  let timer = null;
+  let sgfText = '';
+  let gameKey = 'empty';
+  let comments = {};
+  let recorder = null, chunks = [];
+  let db = null;
+
+  const letters = 'ABCDEFGHJKLMNOPQRST';
+
+  function hashString(s){
+    let h = 2166136261;
+    for(let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h += (h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24); }
+    return (h>>>0).toString(16);
+  }
+
+  function initDB(){
+    return new Promise((resolve,reject)=>{
+      const req = indexedDB.open('joygo-review-db',1);
+      req.onupgradeneeded = e => {
+        const d = e.target.result;
+        if(!d.objectStoreNames.contains('audio')) d.createObjectStore('audio');
+        if(!d.objectStoreNames.contains('comments')) d.createObjectStore('comments');
+      };
+      req.onsuccess = e => { db=e.target.result; resolve(); };
+      req.onerror = reject;
+    });
+  }
+
+  function dbGet(store,key){
+    return new Promise(resolve=>{
+      if(!db) return resolve(null);
+      const tx=db.transaction(store,'readonly');
+      const r=tx.objectStore(store).get(key);
+      r.onsuccess=()=>resolve(r.result ?? null);
+      r.onerror=()=>resolve(null);
+    });
+  }
+  function dbSet(store,key,val){
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction(store,'readwrite');
+      tx.objectStore(store).put(val,key);
+      tx.oncomplete=resolve; tx.onerror=reject;
+    });
+  }
+  function dbDel(store,key){
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction(store,'readwrite');
+      tx.objectStore(store).delete(key);
+      tx.oncomplete=resolve; tx.onerror=reject;
+    });
+  }
+  const ckey = () => `${gameKey}:comments`;
+  const akey = n => `${gameKey}:move:${n}`;
+
+  function sgfUnescape(s){
+    return (s||'').replace(/\\\]/g,']').replace(/\\\\/g,'\\').replace(/\\\r?\n/g,'');
+  }
+
+  function parseSGF(text){
+    const sz = text.match(/SZ\[(\d+)\]/i);
+    size = sz ? parseInt(sz[1],10) : 19;
+    if(![9,13,19].includes(size)) throw new Error('此版本只支援 9×9、13×13、19×19。');
+    
+    const radio = document.querySelector(`input[name="boardSizeRadio"][value="${size}"]`);
+    if(radio) radio.checked = true;
+
+    setupBlack = [...text.matchAll(/AB((?:\[[a-s]{2}\])+)/ig)]
+      .flatMap(m=>[...m[1].matchAll(/\[([a-s]{2})\]/ig)].map(x=>coord(x[1])));
+    setupWhite = [...text.matchAll(/AW((?:\[[a-s]{2}\])+)/ig)]
+      .flatMap(m=>[...m[1].matchAll(/\[([a-s]{2})\]/ig)].map(x=>coord(x[1])));
+
+    moves = [];
+    const re = /;([BW])\[([a-s]{0,2})\]([^;()]*)/ig;
+    let m;
+    while((m=re.exec(text))){
+      const color=m[1].toUpperCase();
+      const raw=m[2];
+      const props=m[3]||'';
+      const cm=props.match(/C\[((?:\\.|[^\]])*)\]/i);
+      moves.push({
+        color,
+        p: raw.length===2 ? coord(raw) : null,
+        sgfComment: cm ? sgfUnescape(cm[1]) : ''
+      });
+    }
+    current=0;
+  }
+
+  function coord(s){
+    return {x:s.charCodeAt(0)-97, y:s.charCodeAt(1)-97};
+  }
+
+  function boardState(n){
+    const b=Array.from({length:size},()=>Array(size).fill(0));
+    setupBlack.forEach(p=>{ if(p&&p.x<size&&p.y<size)b[p.y][p.x]=1; });
+    setupWhite.forEach(p=>{ if(p&&p.x<size&&p.y<size)b[p.y][p.x]=2; });
+
+    function neighbors(x,y){ return [[x-1,y],[x+1,y],[x,y-1],[x,y+1]].filter(([a,c])=>a>=0&&c>=0&&a<size&&c<size); }
+    function group(x,y){
+      const col=b[y][x], seen=new Set(), stones=[], libs=new Set(), stack=[[x,y]];
+      while(stack.length){
+        const [a,c]=stack.pop(), k=a+','+c;
+        if(seen.has(k)) continue; seen.add(k); stones.push([a,c]);
+        for(const [nx,ny] of neighbors(a,c)){
+          if(b[ny][nx]===0) libs.add(nx+','+ny);
+          else if(b[ny][nx]===col&&!seen.has(nx+','+ny)) stack.push([nx,ny]);
+        }
+      }
+      return {stones,libs};
+    }
+    function removeGroup(g){ g.stones.forEach(([x,y])=>b[y][x]=0); }
+
+    for(let i=0;i<n;i++){
+      const mv=moves[i];
+      if(!mv.p) continue;
+      const {x,y}=mv.p;
+      const col=mv.color==='B'?1:2, opp=3-col;
+      if(x<0||y<0||x>=size||y>=size) continue;
+      b[y][x]=col;
+      for(const [nx,ny] of neighbors(x,y)){
+        if(b[ny][nx]===opp){
+          const g=group(nx,ny);
+          if(g.libs.size===0) removeGroup(g);
+        }
+      }
+      if(b[y][x]===col){
+        const own=group(x,y);
+        if(own.libs.size===0) removeGroup(own);
+      }
+    }
+    return b;
+  }
+
+  function hoshiPoints(){
+    if(size===19) return [[3,3],[9,3],[15,3],[3,9],[9,9],[15,9],[3,15],[9,15],[15,15]];
+    if(size===13) return [[3,3],[9,3],[6,6],[3,9],[9,9]];
+    return [[2,2],[6,2],[4,4],[2,6],[6,6]];
+  }
+
+  function draw(){
+    document.documentElement.classList.add('js-ok');
+    const W=canvas.width, pad=W*0.065, span=W-2*pad, step=span/(size-1);
+    ctx.clearRect(0,0,W,W);
+    ctx.fillStyle='#d7a85f'; ctx.fillRect(0,0,W,W);
+
+    ctx.strokeStyle='#4c3828'; ctx.lineWidth=Math.max(1.6,W/650);
+    for(let i=0;i<size;i++){
+      const p=pad+i*step;
+      ctx.beginPath();ctx.moveTo(p,pad);ctx.lineTo(p,pad+span);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(pad,p);ctx.lineTo(pad+span,p);ctx.stroke();
+    }
+    ctx.fillStyle='#3e2d20';
+    hoshiPoints().forEach(([x,y])=>{ctx.beginPath();ctx.arc(pad+x*step,pad+y*step,Math.max(3,W/160),0,Math.PI*2);ctx.fill();});
+
+    const b=boardState(current);
+    let last=null;
+    if(current>0) last=moves[current-1];
+
+    for(let y=0;y<size;y++) for(let x=0;x<size;x++){
+      if(!b[y][x]) continue;
+      const cx=pad+x*step, cy=pad+y*step, r=step*.45;
+      const g=ctx.createRadialGradient(cx-r*.28,cy-r*.32,r*.1,cx,cy,r);
+      if(b[y][x]===1){g.addColorStop(0,'#555');g.addColorStop(1,'#050505');}
+      else{g.addColorStop(0,'#fff');g.addColorStop(1,'#d7d7d7');}
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle=b[y][x]===1?'#111':'#aaa';ctx.lineWidth=1;ctx.stroke();
+
+      if($('showNumber').checked){
+        let moveNo=0;
+        for(let k=0;k<current;k++) if(moves[k].p && moves[k].p.x===x && moves[k].p.y===y) moveNo=k+1;
+        if(moveNo){
+          ctx.fillStyle=b[y][x]===1?'white':'#111';
+          ctx.font=`bold ${Math.max(12,step*.34)}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+          ctx.fillText(moveNo,cx,cy+1);
+        }
+      }
+    }
+
+    if(last && last.p){
+      const cx=pad+last.p.x*step, cy=pad+last.p.y*step;
+      ctx.strokeStyle='#d51f26';ctx.lineWidth=Math.max(3,W/250);
+      ctx.strokeRect(cx-step*.18,cy-step*.18,step*.36,step*.36);
+    }
+  }
+
+  function moveLabel(i){
+    if(i===0) return '開局';
+    const m=moves[i-1], c=m.color==='B'?'黑':'白';
+    if(!m.p) return `${i}. ${c} Pass`;
+    const x=letters[m.p.x]||'?';
+    const y=size-m.p.y;
+    return `${i}. ${c} ${x}${y}`;
+  }
+
+  async function refreshUI({autoVoice=false}={}){
+    draw();
+    $('moveInfo').textContent=`第 ${current} / ${moves.length} 手`;
+    $('prevBtn').disabled=current<=0;
+    $('firstBtn').disabled=current<=0;
+    $('nextBtn').disabled=current>=moves.length;
+    $('lastBtn').disabled=current>=moves.length;
+
+    document.querySelectorAll('.move-row').forEach((el,idx)=>el.classList.toggle('active',idx===current));
+    const active=document.querySelector('.move-row.active');
+    if(active) active.scrollIntoView({block:'nearest'});
+
+    let txt = comments[current] ?? (current>0 ? (moves[current-1].sgfComment||'') : '');
+    $('comment').value=txt;
+
+    const blob=await dbGet('audio',akey(current));
+    setAudio(blob);
+    if(autoVoice && $('autoVoice').checked && blob) playBlob(blob);
+  }
+
+  function buildMoveList(){
+    const box=$('moveList'); box.innerHTML='';
+    for(let i=0;i<=moves.length;i++){
+      const row=document.createElement('div');
+      row.className='move-row';
+      const l=document.createElement('span'); l.textContent=moveLabel(i);
+      const r=document.createElement('span'); r.className='badge'; r.textContent=i===0?'起點':`第${i}手`;
+      row.append(l,r); row.onclick=()=>{ stopPlay(); current=i; refreshUI({autoVoice:true}); };
+      box.appendChild(row);
+    }
+  }
+
+  function getDelayMs(){
+    let sec=parseFloat($('speedSec').value);
+    if(!Number.isFinite(sec)) sec=1.5;
+    sec=Math.max(0.2,Math.min(30,sec));
+    $('speedSec').value=String(sec);
+    return Math.round(sec*1000);
+  }
+
+  function stopPlay(){
+    if(timer){ clearTimeout(timer); timer=null; }
+    $('playBtn').textContent='▶ 播放';
+    $('pauseBtn').disabled=true;
+  }
+
+  function playLoop(){
+    stopPlay();
+    $('playBtn').textContent='▶ 播放中';
+    $('pauseBtn').disabled=false;
+    const run=async()=>{
+      if(current>=moves.length){ stopPlay(); return; }
+      current++;
+      await refreshUI({autoVoice:true});
+      timer=setTimeout(run,getDelayMs());
+    };
+    timer=setTimeout(run,120);
+  }
+
+  function setAudio(blob){
+    const has=!!blob;
+    $('playVoiceBtn').disabled=!has;
+    $('deleteVoiceBtn').disabled=!has;
+    $('audioPlayer').style.display=has?'block':'none';
+    if(has) $('audioPlayer').src=URL.createObjectURL(blob);
+    else { $('audioPlayer').removeAttribute('src'); $('audioPlayer').load(); }
+  }
+
+  function playBlob(blob){
+    $('audioPlayer').src=URL.createObjectURL(blob);
+    $('audioPlayer').style.display='block';
+    $('audioPlayer').play().catch(()=>{});
+  }
+
+  async function loadForGame(){
+    comments=await dbGet('comments',ckey()) || {};
+    $('gameTitle').value=comments.__title || '';
+    buildMoveList();
+    await refreshUI();
+  }
+
+  $('sgfFile').addEventListener('change', async e=>{
+    const f=e.target.files[0]; if(!f)return;
+    if(!f.name.toLowerCase().endsWith('.sgf')){
+      alert('請選擇 .sgf 棋譜檔。');
+      e.target.value='';
+      return;
+    }
+    try{
+      stopPlay();
+      sgfText=await f.text();
+      parseSGF(sgfText);
+      gameKey='sgf-'+hashString(sgfText);
+      $('gameInfo').textContent=`${f.name}｜${size}×${size}｜共 ${moves.length} 手`;
+      $('jsStatus').textContent=`已載入：${moves.length} 手`;
+      await loadForGame();
+    }catch(err){ alert(err.message||String(err)); }
+  });
+
+  $('prevBtn').onclick=()=>{ if(current>0){stopPlay();current--;refreshUI({autoVoice:true});}};
+  $('nextBtn').onclick=()=>{ if(current<moves.length){stopPlay();current++;refreshUI({autoVoice:true});}};
+  $('firstBtn').onclick=()=>{stopPlay();current=0;refreshUI({autoVoice:true});};
+  $('lastBtn').onclick=()=>{stopPlay();current=moves.length;refreshUI({autoVoice:true});};
+  $('playBtn').onclick=()=>{ if(!timer) playLoop(); };
+  $('pauseBtn').onclick=stopPlay;
+  $('speedSec').addEventListener('change', getDelayMs);
+
+  document.querySelectorAll('input[name="boardSizeRadio"]').forEach(r=>{
+    r.addEventListener('change',()=>{
+      if(!r.checked) return;
+      stopPlay();
+      size=parseInt(r.value,10);
+      moves=[];
+      setupBlack=[];
+      setupWhite=[];
+      current=0;
+      sgfText='';
+      gameKey='blank-'+size;
+      comments={};
+      $('gameInfo').textContent=`空白棋盤｜${size}×${size}`;
+      buildMoveList();
+      refreshUI();
+    });
+  });
+
+  $('showNumber').onchange=draw;
+
+  $('saveCommentBtn').onclick=async()=>{
+    comments[current]=$('comment').value.trim();
+    comments.__title=$('gameTitle').value.trim();
+    await dbSet('comments',ckey(),comments);
+    $('recordStatus').textContent=`已儲存第 ${current} 手文字解說。`;
+  };
+  $('clearCommentBtn').onclick=async()=>{
+    delete comments[current];
+    $('comment').value='';
+    await dbSet('comments',ckey(),comments);
+  };
+  $('gameTitle').onchange=async()=>{
+    comments.__title=$('gameTitle').value.trim();
+    await dbSet('comments',ckey(),comments);
+  };
+
+  $('recordBtn').onclick=async()=>{
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      const preferred = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' :
+                        MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
+      recorder = preferred ? new MediaRecorder(stream,{mimeType:preferred}) : new MediaRecorder(stream);
+      chunks=[];
+      recorder.ondataavailable=e=>{ if(e.data && e.data.size) chunks.push(e.data); };
+      recorder.onstop=async()=>{
+        const blob=new Blob(chunks,{type:recorder.mimeType||'audio/webm'});
+        await dbSet('audio',akey(current),blob);
+        setAudio(blob);
+        stream.getTracks().forEach(t=>t.stop());
+        $('recordStatus').textContent=`第 ${current} 手錄音已儲存。`;
+      };
+      recorder.start();
+      $('recordBtn').disabled=true;
+      $('stopRecordBtn').disabled=false;
+      $('recordStatus').textContent=`正在錄製第 ${current} 手語音解說…`;
+    }catch(err){
+      alert('無法啟用麥克風。請確認瀏覽器麥克風權限，並建議使用 HTTPS 網址開啟。');
+    }
+  };
+
+  $('stopRecordBtn').onclick=()=>{
+    if(recorder && recorder.state!=='inactive') recorder.stop();
+    $('recordBtn').disabled=false;
+    $('stopRecordBtn').disabled=true;
+  };
+
+  $('playVoiceBtn').onclick=async()=>{
+    const blob=await dbGet('audio',akey(current)); if(blob) playBlob(blob);
+  };
+  $('deleteVoiceBtn').onclick=async()=>{
+    await dbDel('audio',akey(current)); setAudio(null);
+    $('recordStatus').textContent=`第 ${current} 手錄音已刪除。`;
+  };
+
+  $('exportBtn').onclick=()=>{
+    const payload={
+      app:'Joy Go 棋譜解盤',
+      version:1,
+      boardSize:size,
+      gameKey,
+      title:$('gameTitle').value.trim(),
+      comments,
+      note:'此 JSON 只匯出文字解說；語音保存在原瀏覽器的 IndexedDB。'
+    };
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=(payload.title||'joygo-review')+'.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  $('importJson').addEventListener('change',async e=>{
+    const f=e.target.files[0]; if(!f)return;
+    try{
+      const obj=JSON.parse(await f.text());
+      comments=obj.comments||{};
+      if(obj.title) comments.__title=obj.title;
+      await dbSet('comments',ckey(),comments);
+      $('gameTitle').value=comments.__title||'';
+      refreshUI();
+    }catch{ alert('JSON 格式不正確。'); }
+  });
+
+  window.addEventListener('resize',draw);
+
+  $('jsStatus').textContent='系統：可載入 SGF';
+
+  // 先畫棋盤，不等 IndexedDB。
+  const initialRadio = document.querySelector(`input[name="boardSizeRadio"][value="${size}"]`);
+  if(initialRadio) initialRadio.checked = true;
+  $('gameInfo').textContent=`空白棋盤｜${size}×${size}`;
+  buildMoveList();
+  draw();
+
+  // 資料庫若可用就啟用；不可用仍可正常播放棋譜與看棋盤。
+  initDB().catch(()=>{
+    $('recordStatus').textContent='目前瀏覽器不支援本機資料儲存；棋譜播放仍可使用。建議改用 Safari 的 HTTPS 測試網址。';
+  });
+
+  // 再延遲重畫一次，處理 iPad 預覽初次版面尺寸尚未完成的情況。
+  setTimeout(draw, 150);
+  setTimeout(draw, 600);
+})();
+</script>
+</body>
+</html>
