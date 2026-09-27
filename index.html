@@ -4,12 +4,15 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>Joy Go 解盤小程式</title>
+<!-- Joy Go playback-scroll-fix: 2026-09-27 -->
 <style>
 :root{
   --bg:#f4efe6; --panel:#fffaf2; --line:#5f4630; --wood:#d7a85f;
   --text:#2d241d; --muted:#76685b; --accent:#6b4b2f; --danger:#9b3f35;
 }
 *{box-sizing:border-box}
+html,body{overflow-anchor:none;}
+main,.card,.board-wrap,#moveList{overflow-anchor:none;}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",sans-serif;background:var(--bg);color:var(--text)}
 header{padding:12px 16px;background:#2f241d;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:0;z-index:20}
 header h1{font-size:18px;margin:0}
@@ -107,11 +110,11 @@ canvas{
         📂 載入 SGF
         <input id="sgfFile" type="file" hidden>
       </label>
-      <button id="prevBtn" class="secondary">◀ 上一手</button>
-      <button id="playBtn">▶ 播放</button>
-      <button id="nextBtn" class="secondary">下一手 ▶</button>
-      <button id="firstBtn" class="light">⏮ 開始</button>
-      <button id="lastBtn" class="light">⏭ 最後</button>
+      <button type="button" id="prevBtn" class="secondary">◀ 上一手</button>
+      <button type="button" id="playBtn">▶ 播放</button>
+      <button type="button" id="nextBtn" class="secondary">下一手 ▶</button>
+      <button type="button" id="firstBtn" class="light">⏮ 開始</button>
+      <button type="button" id="lastBtn" class="light">⏭ 最後</button>
     </div>
 
     <div class="toolbar">
@@ -128,7 +131,7 @@ canvas{
       <input id="speedSec" type="number" min="0.2" max="30" step="0.1" value="1.5"
              style="width:88px;border:1px solid #cdbda9;border-radius:9px;padding:8px;background:#fffdf8;font-size:16px">
       <span class="small">秒／手</span>
-      <button id="pauseBtn" class="light" disabled>⏸ 暫停</button>
+      <button type="button" id="pauseBtn" class="light" disabled>⏸ 暫停</button>
       <label class="small"><input id="showNumber" type="checkbox" checked> 顯示手數</label>
       <span id="jsStatus" class="badge">系統：啟動中…</span>
       <label class="small"><input id="autoVoice" type="checkbox"> 自動播放本手錄音</label>
@@ -151,16 +154,16 @@ canvas{
     <div class="section-title">本手文字解說</div>
     <textarea id="comment" placeholder="例如：黑棋此手先手壓迫，目的是逼白棋低位應對，再轉身搶右上角大場。"></textarea>
     <div class="toolbar">
-      <button id="saveCommentBtn">儲存文字</button>
-      <button id="clearCommentBtn" class="light">清除本手文字</button>
+      <button type="button" id="saveCommentBtn">儲存文字</button>
+      <button type="button" id="clearCommentBtn" class="light">清除本手文字</button>
     </div>
 
     <div class="section-title">本手語音解說</div>
     <div class="audioBox">
-      <button id="recordBtn">● 開始錄音</button>
-      <button id="stopRecordBtn" class="danger" disabled>■ 停止</button>
-      <button id="playVoiceBtn" class="secondary" disabled>▶ 播放錄音</button>
-      <button id="deleteVoiceBtn" class="light" disabled>刪除錄音</button>
+      <button type="button" id="recordBtn">● 開始錄音</button>
+      <button type="button" id="stopRecordBtn" class="danger" disabled>■ 停止</button>
+      <button type="button" id="playVoiceBtn" class="secondary" disabled>▶ 播放錄音</button>
+      <button type="button" id="deleteVoiceBtn" class="light" disabled>刪除錄音</button>
     </div>
     <audio id="audioPlayer" controls style="width:100%;margin-top:8px;display:none"></audio>
     <div id="recordStatus" class="note">錄音會綁定在目前這一手。</div>
@@ -172,7 +175,7 @@ canvas{
     <div id="moveList" class="move-list"></div>
 
     <div class="toolbar" style="margin-top:10px">
-      <button id="exportBtn" class="secondary">匯出文字解說 JSON</button>
+      <button type="button" id="exportBtn" class="secondary">匯出文字解說 JSON</button>
       <label class="btn light">
         匯入解說 JSON
         <input id="importJson" type="file" accept=".json,application/json" hidden>
@@ -388,7 +391,9 @@ canvas{
     return `${i}. ${c} ${x}${y}`;
   }
 
-  async function refreshUI({autoVoice=false}={}){
+  async function refreshUI({autoVoice=false,keepViewport=false}={}){
+    const savedX = window.scrollX;
+    const savedY = window.scrollY;
     draw();
     $('moveInfo').textContent=`第 ${current} / ${moves.length} 手`;
     $('prevBtn').disabled=current<=0;
@@ -397,8 +402,7 @@ canvas{
     $('lastBtn').disabled=current>=moves.length;
 
     document.querySelectorAll('.move-row').forEach((el,idx)=>el.classList.toggle('active',idx===current));
-    const active=document.querySelector('.move-row.active');
-    if(active) active.scrollIntoView({block:'nearest'});
+    // 不自動 scrollIntoView，避免 iPad Safari 播放時整個頁面跳動。
 
     let txt = comments[current] ?? (current>0 ? (moves[current-1].sgfComment||'') : '');
     $('comment').value=txt;
@@ -406,6 +410,16 @@ canvas{
     const blob=await dbGet('audio',akey(current));
     setAudio(blob);
     if(autoVoice && $('autoVoice').checked && blob) playBlob(blob);
+
+    // iPad / iPhone Safari:
+    // keep the page at exactly the same viewport position during automatic playback.
+    if(keepViewport){
+      const restoreViewport = () => window.scrollTo(savedX, savedY);
+      restoreViewport();
+      requestAnimationFrame(restoreViewport);
+      setTimeout(restoreViewport, 0);
+      setTimeout(restoreViewport, 80);
+    }
   }
 
   function buildMoveList(){
@@ -441,7 +455,7 @@ canvas{
     const run=async()=>{
       if(current>=moves.length){ stopPlay(); return; }
       current++;
-      await refreshUI({autoVoice:true});
+      await refreshUI({autoVoice:true,keepViewport:true});
       timer=setTimeout(run,getDelayMs());
     };
     timer=setTimeout(run,120);
@@ -487,12 +501,19 @@ canvas{
     }catch(err){ alert(err.message||String(err)); }
   });
 
-  $('prevBtn').onclick=()=>{ if(current>0){stopPlay();current--;refreshUI({autoVoice:true});}};
-  $('nextBtn').onclick=()=>{ if(current<moves.length){stopPlay();current++;refreshUI({autoVoice:true});}};
-  $('firstBtn').onclick=()=>{stopPlay();current=0;refreshUI({autoVoice:true});};
-  $('lastBtn').onclick=()=>{stopPlay();current=moves.length;refreshUI({autoVoice:true});};
-  $('playBtn').onclick=()=>{ if(!timer) playLoop(); };
-  $('pauseBtn').onclick=stopPlay;
+  $('prevBtn').onclick=(e)=>{e.preventDefault();$('prevBtn').blur();if(current>0){stopPlay();current--;refreshUI({autoVoice:true});}};
+  $('nextBtn').onclick=(e)=>{e.preventDefault();$('nextBtn').blur();if(current<moves.length){stopPlay();current++;refreshUI({autoVoice:true});}};
+  $('firstBtn').onclick=(e)=>{e.preventDefault();$('firstBtn').blur();stopPlay();current=0;refreshUI({autoVoice:true});};
+  $('lastBtn').onclick=(e)=>{e.preventDefault();$('lastBtn').blur();stopPlay();current=moves.length;refreshUI({autoVoice:true});};
+  $('playBtn').onclick=(e)=>{
+    e.preventDefault();
+    $('playBtn').blur();
+    if(document.activeElement && typeof document.activeElement.blur==='function'){
+      document.activeElement.blur();
+    }
+    if(!timer) playLoop();
+  };
+  $('pauseBtn').onclick=(e)=>{e.preventDefault();$('pauseBtn').blur();stopPlay();};
   $('speedSec').addEventListener('change', getDelayMs);
 
   document.querySelectorAll('input[name="boardSizeRadio"]').forEach(r=>{
