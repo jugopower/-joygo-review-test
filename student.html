@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Joy Go 解盤小程式</title>
+<title>Joy Go 棋譜解盤－學生觀看版</title>
 <!-- Joy Go playback-scroll-fix: 2026-09-27 | collapsible-move-list: 2026-09-28 | circle-last-move-marker: 2026-09-28 | ipad-comment-input-fix: 2026-09-28 | supabase-publish: 2026-09-28 -->
 <style>
 :root{
@@ -160,18 +160,21 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
 .cloud-row input{flex:1;min-width:180px;border:1px solid #cdbda9;border-radius:9px;padding:9px;background:#fffdf8;font:inherit}
 .cloud-status{font-size:13px;color:var(--muted);line-height:1.45}
 .share-link{word-break:break-all;font-size:13px;padding:8px;border-radius:8px;background:#f1e7da;display:none}
+
+.teacher-only,.cloud-panel,#saveCommentBtn,#clearCommentBtn,#recordBtn,#stopRecordBtn,#playVoiceBtn,#deleteVoiceBtn,#exportBtn{display:none!important}
+.student-banner{margin-bottom:10px;padding:9px 10px;border-radius:9px;background:#f1e7da;color:#5b4939;font-size:13px}
 </style>
 </head>
 <body>
 <header>
-  <h1>Joy Go 棋譜解盤</h1>
+  <h1>Joy Go 棋譜解盤－學生觀看版</h1>
   <div style="font-size:13px;opacity:.8">SGF 9×9／13×13／19×19</div>
 </header>
 
 <main>
   <section class="card">
     <div class="toolbar">
-      <label class="btn" title="從「檔案」App 選擇 .sgf 棋譜">
+      <label class="btn teacher-only" title="從「檔案」App 選擇 .sgf 棋譜">
         📂 載入 SGF
         <input id="sgfFile" type="file" hidden>
       </label>
@@ -183,8 +186,8 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
     </div>
 
     <div class="toolbar">
-      <span class="small">棋盤大小</span>
-      <div class="board-size-picker">
+      <span class="small teacher-only">棋盤大小</span>
+      <div class="board-size-picker teacher-only">
         <input type="radio" name="boardSizeRadio" id="bs9" value="9">
         <label for="bs9">9 路</label>
         <input type="radio" name="boardSizeRadio" id="bs13" value="13">
@@ -216,25 +219,25 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
   </section>
 
   <aside class="card">
-    <div class="section-title">本手文字解說</div>
-    <textarea id="comment" placeholder="例如：黑棋此手先手壓迫，目的是逼白棋低位應對，再轉身搶右上角大場。"></textarea>
+    <div class="student-banner">學生觀看版：棋譜與文字解說由老師發布，內容不可修改。</div><div class="section-title">老師本手文字解說</div>
+    <textarea id="comment" readonly placeholder="例如：黑棋此手先手壓迫，目的是逼白棋低位應對，再轉身搶右上角大場。"></textarea>
     <div class="toolbar">
       <button type="button" id="saveCommentBtn">儲存文字</button>
       <button type="button" id="clearCommentBtn" class="light">清除本手文字</button>
     </div>
 
-    <div class="section-title">本手語音解說</div>
-    <div class="audioBox">
+    <div class="section-title teacher-only">本手語音解說</div>
+    <div class="audioBox teacher-only">
       <button type="button" id="recordBtn">● 開始錄音</button>
       <button type="button" id="stopRecordBtn" class="danger" disabled>■ 停止</button>
       <button type="button" id="playVoiceBtn" class="secondary" disabled>▶ 播放錄音</button>
       <button type="button" id="deleteVoiceBtn" class="light" disabled>刪除錄音</button>
     </div>
-    <audio id="audioPlayer" controls style="width:100%;margin-top:8px;display:none"></audio>
-    <div id="recordStatus" class="note">錄音會綁定在目前這一手。</div>
+    <audio class="teacher-only" id="audioPlayer" controls style="width:100%;margin-top:8px;display:none"></audio>
+    <div id="recordStatus" class="note teacher-only">錄音會綁定在目前這一手。</div>
 
     <div class="section-title">棋局名稱</div>
-    <input id="gameTitle" type="text" placeholder="例如：朱老師解說－AI進三三研究">
+    <input id="gameTitle" type="text" readonly placeholder="例如：朱老師解說－AI進三三研究">
 
     <details class="cloud-panel" open>
       <summary>☁️ 發布給學生</summary>
@@ -262,7 +265,7 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
       <div id="moveList" class="move-list"></div>
     </details>
 
-    <div class="toolbar" style="margin-top:10px">
+    <div class="toolbar teacher-only" style="margin-top:10px">
       <button type="button" id="exportBtn" class="secondary">匯出文字解說 JSON</button>
       <label class="btn light">
         匯入解說 JSON
@@ -871,7 +874,43 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
   // 再延遲重畫一次，處理 iPad 預覽初次版面尺寸尚未完成的情況。
   setTimeout(draw, 150);
   setTimeout(draw, 600);
-  initCloud();
+
+  async function loadPublishedReview(){
+    try{
+      const params=new URLSearchParams(location.search);
+      const id=params.get('id');
+      if(!id){
+        $('gameInfo').textContent='缺少棋局 ID';
+        $('jsStatus').textContent='無法載入';
+        return;
+      }
+      supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+      $('jsStatus').textContent='正在載入老師棋譜…';
+      const {data,error}=await supabaseClient
+        .from('go_reviews')
+        .select('id,title,sgf_text,comments,board_size,is_public,created_at')
+        .eq('id',id)
+        .eq('is_public',true)
+        .single();
+      if(error || !data) throw error || new Error('找不到棋譜');
+      sgfText=data.sgf_text;
+      parseSGF(sgfText);
+      gameKey='cloud-'+data.id;
+      comments=(data.comments && typeof data.comments==='object') ? data.comments : {};
+      comments.__title=data.title || comments.__title || '';
+      $('gameTitle').value=data.title || '';
+      $('gameInfo').textContent=`${data.title || '老師棋譜'}｜${size}×${size}｜共 ${moves.length} 手`;
+      $('jsStatus').textContent=`已載入：${moves.length} 手`;
+      buildMoveList();
+      await refreshUI();
+    }catch(err){
+      $('gameInfo').textContent='棋譜載入失敗';
+      $('jsStatus').textContent='載入失敗';
+      alert(`無法載入老師發布的棋譜：${err?.message || err}`);
+    }
+  }
+
+  loadPublishedReview();
 })();
 </script>
 </body>
