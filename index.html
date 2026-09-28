@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>Joy Go 解盤小程式</title>
-<!-- Joy Go playback-scroll-fix: 2026-09-27 | collapsible-move-list: 2026-09-28 | circle-last-move-marker: 2026-09-28 | ipad-comment-input-fix: 2026-09-28 | supabase-publish: 2026-09-28 -->
+<!-- Joy Go playback-scroll-fix: 2026-09-27 | collapsible-move-list: 2026-09-28 | circle-last-move-marker: 2026-09-28 | ipad-comment-input-fix: 2026-09-28 | supabase-publish: 2026-09-28 | platform-session-publish: 2026-09-28 -->
 <style>
 :root{
   --bg:#f4efe6; --panel:#fffaf2; --line:#5f4630; --wood:#d7a85f;
@@ -239,15 +239,7 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
     <details class="cloud-panel" open>
       <summary>☁️ 發布給學生</summary>
       <div class="cloud-grid">
-        <div class="cloud-row">
-          <input id="cloudEmail" type="email" autocomplete="username" placeholder="Joy Go 老師帳號 Email">
-          <input id="cloudPassword" type="password" autocomplete="current-password" placeholder="密碼">
-        </div>
-        <div class="cloud-row">
-          <button type="button" id="cloudLoginBtn">登入</button>
-          <button type="button" id="cloudLogoutBtn" class="light" style="display:none">登出</button>
-        </div>
-        <div id="cloudStatus" class="cloud-status">尚未登入。登入後即可發布棋譜與文字解說。</div>
+        <div id="cloudStatus" class="cloud-status">正在確認 Joy Go Platform 登入狀態…</div>
         <div class="cloud-row">
           <button type="button" id="publishBtn" class="secondary" disabled>發布給學生</button>
           <button type="button" id="copyShareBtn" class="light" style="display:none">複製學生網址</button>
@@ -356,13 +348,9 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
 
   function updateCloudUI(){
     const logged=!!cloudUser;
-    if($('cloudLoginBtn')) $('cloudLoginBtn').style.display=logged?'none':'inline-block';
-    if($('cloudLogoutBtn')) $('cloudLogoutBtn').style.display=logged?'inline-block':'none';
-    if($('cloudEmail')) $('cloudEmail').disabled=logged;
-    if($('cloudPassword')) $('cloudPassword').disabled=logged;
     if($('publishBtn')) $('publishBtn').disabled=!logged || !sgfText || moves.length===0;
-    if(logged) setCloudStatus(`已登入：${cloudUser.email || 'Joy Go 老師'}。可發布給學生。`);
-    else setCloudStatus('尚未登入。登入後即可發布棋譜與文字解說。');
+    if(logged) setCloudStatus(`已連結 Joy Go Platform：${cloudUser.email || '老師帳號'}。可直接發布給學生。`);
+    else setCloudStatus('尚未取得 Joy Go Platform 登入狀態。請先登入 Joy Go Platform，再重新開啟老師版。',true);
   }
 
   async function initCloud(){
@@ -789,30 +777,10 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
   });
 
 
-  $('cloudLoginBtn').onclick=async()=>{
-    if(!supabaseClient) return setCloudStatus('雲端功能尚未啟動。',true);
-    const email=$('cloudEmail').value.trim();
-    const password=$('cloudPassword').value;
-    if(!email || !password) return setCloudStatus('請輸入 Joy Go 帳號 Email 與密碼。',true);
-    setCloudStatus('登入中…');
-    const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});
-    if(error) return setCloudStatus(`登入失敗：${error.message}`,true);
-    cloudUser=data.user;
-    $('cloudPassword').value='';
-    updateCloudUI();
-  };
 
-  $('cloudLogoutBtn').onclick=async()=>{
-    if(supabaseClient) await supabaseClient.auth.signOut();
-    cloudUser=null;
-    lastShareUrl='';
-    $('shareLink').style.display='none';
-    $('copyShareBtn').style.display='none';
-    updateCloudUI();
-  };
 
   $('publishBtn').onclick=async()=>{
-    if(!supabaseClient || !cloudUser) return setCloudStatus('請先登入老師帳號。',true);
+    if(!supabaseClient || !cloudUser) return setCloudStatus('尚未取得 Joy Go Platform 登入狀態。請先登入 Joy Go Platform，再重新開啟老師版。',true);
     if(!sgfText || moves.length===0) return setCloudStatus('請先載入 SGF 棋譜。',true);
     try{
       $('publishBtn').disabled=true;
