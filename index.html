@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>Joy Go 解盤小程式</title>
-<!-- Joy Go playback-scroll-fix: 2026-09-27 | collapsible-move-list: 2026-09-28 | circle-last-move-marker: 2026-09-28 -->
+<!-- Joy Go playback-scroll-fix: 2026-09-27 | collapsible-move-list: 2026-09-28 | circle-last-move-marker: 2026-09-28 | ipad-comment-input-fix: 2026-09-28 -->
 <style>
 :root{
   --bg:#f4efe6; --panel:#fffaf2; --line:#5f4630; --wood:#d7a85f;
@@ -92,7 +92,7 @@ canvas{
 .js-ok .fallback-grid{display:none!important}
 
 .section-title{font-weight:700;margin:12px 0 6px}
-textarea{width:100%;min-height:92px;border:1px solid #cdbda9;border-radius:10px;padding:9px;background:#fffdf8;font:inherit}
+textarea{width:100%;min-height:110px;border:1px solid #cdbda9;border-radius:10px;padding:10px;background:#fffdf8;font:inherit;color:var(--text);-webkit-user-select:text;user-select:text;touch-action:auto;pointer-events:auto;resize:vertical}
 input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9px;background:#fffdf8;font:inherit}
 .small,.note{font-size:13px;color:var(--muted)}
 .badge{font-size:12px;padding:3px 7px;border-radius:999px;background:#eee1d2;color:#4a382a}
@@ -262,6 +262,7 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
   let comments = {};
   let recorder = null, chunks = [];
   let db = null;
+  let editingComment = false;
 
   const letters = 'ABCDEFGHJKLMNOPQRST';
 
@@ -471,7 +472,9 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
     // 不自動 scrollIntoView，避免 iPad Safari 播放時整個頁面跳動。
 
     let txt = comments[current] ?? (current>0 ? (moves[current-1].sgfComment||'') : '');
-    $('comment').value=txt;
+    if(!editingComment && document.activeElement !== $('comment')){
+      $('comment').value=txt;
+    }
 
     const blob=await dbGet('audio',akey(current));
     setAudio(blob);
@@ -602,13 +605,31 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
 
   $('showNumber').onchange=draw;
 
+  // iPad Safari：點入文字解說時先停止棋譜播放，
+  // 避免每 1.5 秒 refreshUI 重設 textarea，造成看似「無法輸入」。
+  $('comment').addEventListener('focus',()=>{
+    editingComment = true;
+    stopPlay();
+  });
+  $('comment').addEventListener('input',()=>{
+    editingComment = true;
+  });
+  $('comment').addEventListener('blur',()=>{
+    editingComment = false;
+  });
+  $('comment').addEventListener('touchstart',()=>{
+    stopPlay();
+  },{passive:true});
+
   $('saveCommentBtn').onclick=async()=>{
+    editingComment = false;
     comments[current]=$('comment').value.trim();
     comments.__title=$('gameTitle').value.trim();
     await dbSet('comments',ckey(),comments);
     $('recordStatus').textContent=`已儲存第 ${current} 手文字解說。`;
   };
   $('clearCommentBtn').onclick=async()=>{
+    editingComment = false;
     delete comments[current];
     $('comment').value='';
     await dbSet('comments',ckey(),comments);
