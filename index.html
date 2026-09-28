@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>Joy Go 解盤小程式</title>
-<!-- Joy Go playback-scroll-fix: 2026-09-27 | collapsible-move-list: 2026-09-28 -->
+<!-- Joy Go playback-scroll-fix: 2026-09-27 | collapsible-move-list: 2026-09-28 | circle-last-move-marker: 2026-09-28 -->
 <style>
 :root{
   --bg:#f4efe6; --panel:#fffaf2; --line:#5f4630; --wood:#d7a85f;
@@ -436,8 +436,14 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
 
     if(last && last.p){
       const cx=pad+last.p.x*step, cy=pad+last.p.y*step;
-      ctx.strokeStyle='#d51f26';ctx.lineWidth=Math.max(3,W/250);
-      ctx.strokeRect(cx-step*.18,cy-step*.18,step*.36,step*.36);
+      // 以圓圈標示最新一手，讓手順數字比方框更清楚
+      ctx.save();
+      ctx.strokeStyle='#d51f26';
+      ctx.lineWidth=Math.max(4,W/220);
+      ctx.beginPath();
+      ctx.arc(cx, cy, step*.36, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.restore();
     }
   }
 
