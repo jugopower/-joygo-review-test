@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>Joy Go 解盤小程式</title>
-<!-- Joy Go playback-scroll-fix: 2026-09-27 | collapsible-move-list: 2026-09-28 | circle-last-move-marker: 2026-09-28 | ipad-comment-input-fix: 2026-09-28 | supabase-publish: 2026-09-28 | platform-session-publish: 2026-09-28 -->
+<!-- Joy Go playback-scroll-fix: 2026-09-27 | collapsible-move-list: 2026-09-28 | circle-last-move-marker: 2026-09-28 | ipad-comment-input-fix: 2026-09-28 | supabase-publish: 2026-09-28 | independent-teacher-login: 2026-09-28 -->
 <style>
 :root{
   --bg:#f4efe6; --panel:#fffaf2; --line:#5f4630; --wood:#d7a85f;
@@ -239,7 +239,17 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
     <details class="cloud-panel" open>
       <summary>☁️ 發布給學生</summary>
       <div class="cloud-grid">
-        <div id="cloudStatus" class="cloud-status">正在確認 Joy Go Platform 登入狀態…</div>
+        <div id="cloudStatus" class="cloud-status">老師版雲端尚未登入。</div>
+        <div id="teacherLoginBox" class="cloud-grid">
+          <div class="cloud-row">
+            <input id="cloudEmail" type="email" inputmode="email" autocomplete="username" placeholder="老師 Email">
+            <input id="cloudPassword" type="password" autocomplete="current-password" placeholder="老師密碼">
+          </div>
+          <div class="cloud-row">
+            <button type="button" id="teacherLoginBtn">老師登入</button>
+            <button type="button" id="teacherLogoutBtn" class="light" style="display:none">登出</button>
+          </div>
+        </div>
         <div class="cloud-row">
           <button type="button" id="publishBtn" class="secondary" disabled>發布給學生</button>
           <button type="button" id="copyShareBtn" class="light" style="display:none">複製學生網址</button>
@@ -349,8 +359,10 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
   function updateCloudUI(){
     const logged=!!cloudUser;
     if($('publishBtn')) $('publishBtn').disabled=!logged || !sgfText || moves.length===0;
-    if(logged) setCloudStatus(`已連結 Joy Go Platform：${cloudUser.email || '老師帳號'}。可直接發布給學生。`);
-    else setCloudStatus('尚未取得 Joy Go Platform 登入狀態。請先登入 Joy Go Platform，再重新開啟老師版。',true);
+    if($('teacherLoginBox')) $('teacherLoginBox').style.display=logged?'none':'grid';
+    if($('teacherLogoutBtn')) $('teacherLogoutBtn').style.display=logged?'inline-block':'none';
+    if(logged) setCloudStatus(`老師已登入：${cloudUser.email || '老師帳號'}。載入 SGF 後即可發布給學生。`);
+    else setCloudStatus('老師版雲端尚未登入。請在下方輸入老師 Email 與密碼。');
   }
 
   async function initCloud(){
@@ -358,7 +370,6 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
       supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
       const {data}=await supabaseClient.auth.getSession();
       cloudUser=data?.session?.user || null;
-      if(cloudUser && $('cloudEmail')) $('cloudEmail').value=cloudUser.email || '';
       updateCloudUI();
       supabaseClient.auth.onAuthStateChange((_event,session)=>{
         cloudUser=session?.user || null;
@@ -366,6 +377,37 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
       });
     }catch(err){
       setCloudStatus(`雲端功能啟動失敗：${err.message||err}`,true);
+    }
+  }
+
+  async function teacherLogin(){
+    if(!supabaseClient) return setCloudStatus('雲端功能尚未啟動，請重新整理頁面。',true);
+    const email=($('cloudEmail')?.value||'').trim();
+    const password=$('cloudPassword')?.value||'';
+    if(!email || !password) return setCloudStatus('請輸入老師 Email 與密碼。',true);
+    try{
+      $('teacherLoginBtn').disabled=true;
+      setCloudStatus('正在登入老師版…');
+      const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});
+      if(error) throw error;
+      cloudUser=data?.user || data?.session?.user || null;
+      if($('cloudPassword')) $('cloudPassword').value='';
+      updateCloudUI();
+    }catch(err){
+      setCloudStatus(`登入失敗：${err.message||err}`,true);
+    }finally{
+      $('teacherLoginBtn').disabled=false;
+    }
+  }
+
+  async function teacherLogout(){
+    if(!supabaseClient) return;
+    try{
+      await supabaseClient.auth.signOut();
+      cloudUser=null;
+      updateCloudUI();
+    }catch(err){
+      setCloudStatus(`登出失敗：${err.message||err}`,true);
     }
   }
 
@@ -779,8 +821,12 @@ input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9
 
 
 
+  $('teacherLoginBtn').onclick=teacherLogin;
+  $('teacherLogoutBtn').onclick=teacherLogout;
+  $('cloudPassword').addEventListener('keydown',e=>{ if(e.key==='Enter') teacherLogin(); });
+
   $('publishBtn').onclick=async()=>{
-    if(!supabaseClient || !cloudUser) return setCloudStatus('尚未取得 Joy Go Platform 登入狀態。請先登入 Joy Go Platform，再重新開啟老師版。',true);
+    if(!supabaseClient || !cloudUser) return setCloudStatus('請先登入老師版，再發布給學生。',true);
     if(!sgfText || moves.length===0) return setCloudStatus('請先載入 SGF 棋譜。',true);
     try{
       $('publishBtn').disabled=true;
