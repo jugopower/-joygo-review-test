@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>Joy Go 解盤小程式</title>
-<!-- Joy Go playback-scroll-fix: 2026-09-27 -->
+<!-- Joy Go playback-scroll-fix: 2026-09-27 | collapsible-move-list: 2026-09-28 -->
 <style>
 :root{
   --bg:#f4efe6; --panel:#fffaf2; --line:#5f4630; --wood:#d7a85f;
@@ -91,9 +91,66 @@ canvas{
 /* JavaScript 正常執行時，Canvas 自己畫盤，隱藏備援線 */
 .js-ok .fallback-grid{display:none!important}
 
+.section-title{font-weight:700;margin:12px 0 6px}
+textarea{width:100%;min-height:92px;border:1px solid #cdbda9;border-radius:10px;padding:9px;background:#fffdf8;font:inherit}
+input[type=text]{width:100%;border:1px solid #cdbda9;border-radius:9px;padding:9px;background:#fffdf8;font:inherit}
+.small,.note{font-size:13px;color:var(--muted)}
+.badge{font-size:12px;padding:3px 7px;border-radius:999px;background:#eee1d2;color:#4a382a}
+.stat{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:8px}
+
+.move-panel{
+  margin-top:12px;
+  border:1px solid #d8cabb;
+  border-radius:10px;
+  background:#fffdf8;
+  overflow:hidden;
+}
+.move-panel summary{
+  list-style:none;
+  cursor:pointer;
+  padding:10px 12px;
+  font-weight:700;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  user-select:none;
+  -webkit-user-select:none;
+}
+.move-panel summary::-webkit-details-marker{display:none}
+.move-panel summary::after{
+  content:"展開";
+  font-size:13px;
+  color:var(--muted);
+  font-weight:600;
+}
+.move-panel[open] summary::after{content:"收合"}
+.move-panel[open] summary{border-bottom:1px solid #e2d6c8}
+.move-list{
+  max-height:220px;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  padding:6px;
+}
+.move-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:8px;
+  padding:7px 8px;
+  border-radius:7px;
+  cursor:pointer;
+}
+.move-row.active{
+  background:#e7dacb;
+  font-weight:700;
+}
+
 @media(max-width:860px){
   main{grid-template-columns:1fr}
   .board-wrap{width:min(96vw,700px)}
+  .move-list{max-height:180px}
 }
 </style>
 </head>
@@ -171,8 +228,10 @@ canvas{
     <div class="section-title">棋局名稱</div>
     <input id="gameTitle" type="text" placeholder="例如：朱老師解說－AI進三三研究">
 
-    <div class="section-title">手順</div>
-    <div id="moveList" class="move-list"></div>
+    <details id="movePanel" class="move-panel">
+      <summary><span id="moveSummary">手順：第 0 / 0 手</span></summary>
+      <div id="moveList" class="move-list"></div>
+    </details>
 
     <div class="toolbar" style="margin-top:10px">
       <button type="button" id="exportBtn" class="secondary">匯出文字解說 JSON</button>
@@ -396,6 +455,7 @@ canvas{
     const savedY = window.scrollY;
     draw();
     $('moveInfo').textContent=`第 ${current} / ${moves.length} 手`;
+    if($('moveSummary')) $('moveSummary').textContent=`手順：第 ${current} / ${moves.length} 手`;
     $('prevBtn').disabled=current<=0;
     $('firstBtn').disabled=current<=0;
     $('nextBtn').disabled=current>=moves.length;
